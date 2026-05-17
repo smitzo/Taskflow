@@ -1,0 +1,187 @@
+TaskFlow
+Backend Engineer Take-Home Project
+
+
+Duration
+3 Days	Required Stack
+Python + FastAPI + PostgreSQL	AI Usage
+Permitted (explain your code)
+
+Project Overview
+You are being asked to build TaskFlow — a multi-tenant team task management backend API. This is a realistic product scenario: multiple companies (tenants) each have their own workspaces, members, and tasks. Your job is to build the backend that powers this product from scratch and make it production-ready.
+
+This project is intentionally scoped to be completable in 3 days. We are not looking for perfection — we are looking for how you think, how you structure code, and how you handle real-world backend challenges like authentication, authorization, data modelling, integrations, and testing.
+
+What we are evaluating
+Code structure, readability, and layered architecture
+Security: authentication, authorization, and IDOR prevention
+API design quality: REST conventions, validation, error handling, pagination
+Database schema design and ORM usage
+Third-party integrations: email notifications and file uploads
+Testing: meaningful unit and integration tests using pytest
+Developer experience: README, docker-compose, and ease of setup
+
+What to Build
+Build a REST API called TaskFlow with the following six core modules:
+
+MODULE 1 — AUTHENTICATION
+Implement a complete JWT-based authentication system:
+•	User registration with email and password (hash passwords using bcrypt)
+•	Login endpoint that returns an access token and a refresh token
+•	Token refresh endpoint
+•	A protected /me endpoint that returns the current user's profile
+•	Protect all other endpoints — unauthenticated requests must be rejected with 401
+
+MODULE 2 — WORKSPACES
+A workspace is a container for a team. Each user can belong to multiple workspaces.
+•	Create a workspace (the creator automatically becomes the owner)
+•	List all workspaces the authenticated user belongs to
+•	Get workspace details including the member list
+•	Update workspace name or description (owner only)
+•	Invite a new member by email — send a notification email when they are added
+•	Remove a member from the workspace (owner only)
+
+MODULE 3 — TASKS
+Tasks belong to a workspace and can be assigned to workspace members.
+•	Create a task with: title, description, assignee (a workspace member), priority (low / medium / high / critical), and deadline
+•	List tasks in a workspace with support for filtering by status, priority, and assignee — results must be paginated
+•	Get full details of a single task including attachments and comments
+•	Update any task field — changing the assignee must trigger an email notification to the new assignee
+•	Change task status through the workflow: todo → in_progress → review → done
+•	Soft-delete a task (mark as deleted, do not remove from database)
+
+MODULE 4 — FILE ATTACHMENTS
+Users can attach files to tasks (for example: screenshots, documents, design files).
+•	Upload a file to a task using multipart/form-data
+•	Retrieve or download a file attachment by its ID
+•	You may store files locally on disk for this project. If you want to use an S3-compatible service, that is a bonus.
+
+MODULE 5 — COMMENTS
+Users should be able to comment on tasks for collaboration.
+•	Add a comment to a task
+•	List all comments on a task (paginated, newest first)
+
+MODULE 6 — INFRASTRUCTURE & SYSTEM
+•	A /health endpoint that checks and reports the status of the database and Redis connections
+•	Redis caching: cache workspace details or task summaries with a sensible TTL
+•	docker-compose.yml that runs the app, PostgreSQL, and Redis together
+•	Database migrations using Alembic
+•	All configuration via environment variables (no hardcoded secrets)
+Suggested 3-Day Plan
+This is a recommended breakdown — you are free to adjust based on your working style. The most important thing is to have a functional, well-structured submission.
+
+Day	Focus	Deliverables
+Day 1
+Foundation	Project setup, DB models, Auth system	Folder structure, Alembic migration, register/login/me endpoints, docker-compose running
+Day 2
+Core features	Workspaces, tasks, invitations, file uploads, email notifications	All workspace and task endpoints working, invite-by-email sending, file upload/download functional
+Day 3
+Quality & polish	Tests, caching, RBAC enforcement, README, pagination, optional frontend	pytest tests passing, Redis caching in place, clean README with setup guide, all filters and pagination working
+
+Technical Requirements
+Required stack
+Technology	Requirement
+Language	Python 3.10 or higher
+Framework	FastAPI (mandatory)
+Database	PostgreSQL/MySQL
+ORM	SQLAlchemy or SQLModel
+Migrations	Alembic
+Authentication	JWT (python-jose or PyJWT)
+Password hashing	bcrypt (passlib[bcrypt])
+Caching	Redis
+Testing	pytest + httpx (FastAPI TestClient)
+Containerisation	Docker + docker-compose
+Config	pydantic-settings (.env file)
+
+Project structure
+Your project must follow a layered architecture. This is the recommended structure — you may adapt it but must maintain the separation of concerns:
+
+taskflow/
+   app/
+     api/v1/          # Route handlers (thin layer)
+     services/        # Business logic
+     repositories/    # Database queries
+     models/          # SQLAlchemy/SQLModel models
+     schemas/         # Pydantic request/response schemas
+     core/            # Config, security, dependencies
+   alembic/           # Database migrations
+   tests/             # All test files
+   docker-compose.yml
+   .env.example       # All required env variables with dummy values
+   README.md
+
+Security requirements
+These are non-negotiable and will be tested during code review
+Passwords must be hashed using bcrypt — never store plain text
+IDOR prevention: always verify that the authenticated user has access to the requested resource before returning data
+Role enforcement: owner-only actions must reject non-owner requests with 403
+No secrets in code: use environment variables for database URLs, JWT secrets, and API keys
+CORS must be configured appropriately
+
+Testing requirements
+You must write meaningful tests using pytest and FastAPI's TestClient. We expect at minimum:
+•	Tests for user registration and login (including failure cases: duplicate email, wrong password)
+•	Tests for workspace creation and access control
+•	Tests for task creation and status transitions
+•	At least one test that verifies an unauthorized user cannot access another user's data (IDOR test)
+•	Tests should use a separate test database and not modify production data
+
+README requirements
+Your README must include:
+•	Project description (2-3 sentences)
+•	Tech stack used
+•	How to run locally with docker-compose (step-by-step)
+•	How to run tests
+•	Any design decisions or trade-offs you made
+•	Known limitations or things you would improve with more time
+
+Optional Bonus Features
+These are not required but will positively influence our assessment if you have time:
+
+Bonus features (pick any that interest you)
+Simple frontend: a React or plain HTML/JS dashboard that demonstrates the API working (login, task board, file upload)
+Cloud file storage: store attachments in an S3-compatible bucket instead of local disk
+Background jobs: use FastAPI background tasks or Celery for sending emails asynchronously
+Rate limiting: protect auth endpoints from brute force using Redis
+Activity log: track task status changes and store a history
+WebSocket: real-time task status update notifications
+Feel Free to add any new feature/Optimizations if you want or else any new backend technique regarding the security or the scalability of this project 
+
+Submission Instructions
+•	Push your complete codebase to a private GitHub repository before submission.
+•	Ensure the repository contains a well-structured and fully documented README.md. The reviewer will rely entirely on your README instructions to set up, run, and evaluate your project
+•	Invite the reviewer’s GitHub account to your private repository Mahendra-HVA GitHub Profile
+•	After completing the submission, send a confirmation email containing:
+•	Your repository link
+•	Any required access credentials or setup notes
+•	Brief submission confirmation
+
+Checklist item	Notes
+Code pushed to GitHub	Private repository, reviewer invited
+docker-compose runs cleanly	app + postgres/mysql + redis all start
+Alembic migration applied	Tables created on first run
+.env.example provided	All required variables documented
+Swagger UI works at /docs	All endpoints visible and testable
+pytest tests pass	Run: docker-compose exec app pytest
+README complete	Setup instructions work end-to-end
+
+Frequently Asked Questions
+Can I use AI tools like ChatGPT or GitHub Copilot?
+Yes, absolutely. AI tool usage is permitted and expected at your experience level. However, you must be able to explain every line of code you submit during the follow-up interview. If you cannot explain why a piece of code exists or what it does, that will affect our evaluation.
+
+Can I use libraries not listed in the requirements?
+Yes. You may use any open-source Python library that helps you build a better product. List any significant additions in your README and briefly explain why you chose them.
+
+What if I cannot complete all features in 3 days?
+Prioritise quality over quantity. A project with 70% of the features implemented cleanly and securely is better than one with 100% of the features implemented poorly. Document anything you did not complete in your README under Known Limitations.
+
+What email service should I use?
+For development, you can use Mailtrap (https://mailtrap.io) — it provides a free sandbox SMTP server that captures emails without sending them. Just configure the SMTP credentials in your .env file. In production you would replace this with SendGrid or SES.
+
+Should the frontend be polished?
+No. If you choose to build a frontend, it only needs to demonstrate that your API works end-to-end. Basic HTML/JS or a simple React app is perfectly fine. We are evaluating your backend skills, not your frontend design.
+
+
+
+Good luck — we are rooting for you.
+If you have any questions about the requirements, reach out before starting rather than assuming.
