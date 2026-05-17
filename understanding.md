@@ -593,7 +593,113 @@ Tradeoff:
 
 Tokens are stored in `localStorage` for speed and simplicity. In production, token storage needs a stronger browser security design, often involving HttpOnly cookies.
 
-## 19. Day 2 Backend Features
+## 19. Full-Stack React Dashboard
+
+The frontend is intentionally simple, but it now exercises the backend end to end.
+
+Main locations:
+
+- App code: `frontend/src/main.jsx`
+- Styling: `frontend/src/styles.css`
+- Vite entry: `frontend/index.html`
+- Frontend dependencies: `frontend/package.json`
+- API base config: `frontend/.env.example`
+
+### Frontend State Model
+
+The React app keeps state for:
+
+- auth tokens
+- current user profile
+- workspace list
+- selected workspace
+- workspace details and members
+- task page and filters
+- task summary counts
+- selected task details
+- comments
+- upload file
+- form fields
+- loading and status messages
+
+Why this matters:
+
+The frontend mirrors the backend product model. A workspace is selected first, then tasks, members, comments, and attachments are loaded within that workspace boundary.
+
+### API Client Pattern
+
+The `request()` helper in `frontend/src/main.jsx` centralizes API calls.
+
+It does three useful things:
+
+- prefixes every path with `VITE_API_BASE_URL`
+- adds the bearer token when logged in
+- handles both JSON responses and file downloads
+
+For file uploads, it detects `FormData` and does not set `Content-Type` manually. This lets the browser set the correct multipart boundary.
+
+### Auth Flow
+
+Frontend flow:
+
+1. User registers or logs in.
+2. The frontend stores the token pair in `localStorage`.
+3. Once logged in, `bootstrapSession()` loads `/auth/me` and `/workspaces`.
+4. The app shows the dashboard only after authentication.
+
+Tradeoff:
+
+`localStorage` is acceptable for a take-home demo, but production apps should consider HttpOnly cookies to reduce exposure to XSS token theft.
+
+### Workspace Flow
+
+The dashboard supports:
+
+- create workspace
+- switch workspace
+- load workspace members
+- invite a member by email
+- remove non-owner members
+
+Implementation detail:
+
+When a workspace changes, `loadWorkspaceBundle()` fetches workspace details, tasks, and task summary together. That keeps the UI synchronized with the selected workspace.
+
+### Task Flow
+
+The dashboard supports:
+
+- create task
+- assign task to a workspace member
+- filter tasks by status, priority, and assignee
+- advance status through the backend workflow
+- soft-delete tasks
+- inspect a task's detail view
+
+The frontend only offers an advance-status button. The backend still enforces the real workflow, so even if a user manipulates requests manually, invalid transitions are rejected.
+
+### Comments And Attachments
+
+The selected task panel supports:
+
+- adding comments
+- uploading a file
+- downloading attachments
+
+For downloads, the frontend receives a blob from the API, creates a temporary object URL, clicks an anchor element, and then revokes the object URL.
+
+### Frontend Styling
+
+The UI is designed as a compact operational dashboard:
+
+- sidebar for auth/session/workspace selection
+- main area for workspace summary, members, task creation, task list, and task detail
+- restrained colors and compact controls
+- no marketing page or hero screen
+
+This matches the project goal: demonstrate backend functionality clearly without distracting from backend review.
+
+## 20. Day 2 Backend Features
 
 Day 2 adds the core product behavior on top of the Day 1 auth foundation.
 
@@ -785,7 +891,7 @@ Tradeoff:
 
 Synchronous email is simple and explicit. In production, sending should move to a background job queue so user requests do not wait on SMTP latency.
 
-## 20. Day 3 Backend Quality And Caching
+## 21. Day 3 Backend Quality And Caching
 
 Day 3 adds backend polish around caching, test coverage, and API completeness.
 
@@ -955,7 +1061,7 @@ Why this matters:
 
 Without this distinction, clients cannot clear fields like assignee, deadline, or description through the API.
 
-## 21. How To Explain The Request Lifecycle
+## 22. How To Explain The Request Lifecycle
 
 Example: Login
 
@@ -995,7 +1101,55 @@ Example: Task Assignment
 4. The task is created.
 5. `EmailService` sends or logs an assignment notification.
 
-## 22. Key Interview Talking Points
+## 23. Final Requirement Checklist
+
+Authentication:
+
+- Registration with bcrypt password hashing: `backend/app/services/auth_service.py`
+- Login with access and refresh token: `backend/app/api/v1/routes/auth.py`
+- Refresh token rotation: `backend/app/services/auth_service.py`
+- Protected `/me`: `backend/app/api/v1/routes/auth.py`
+
+Workspaces:
+
+- Create/list/details/update/invite/remove: `backend/app/api/v1/routes/workspaces.py`
+- Owner-only enforcement: `backend/app/services/workspace_service.py`
+- Membership checks for IDOR prevention: `backend/app/repositories/workspace_repository.py`
+
+Tasks:
+
+- Create/list/filter/detail/update/status/soft-delete: `backend/app/api/v1/routes/tasks.py`
+- Workflow enforcement: `backend/app/services/task_service.py`
+- Assignee membership validation: `backend/app/services/task_service.py`
+
+Attachments:
+
+- Upload/download: `backend/app/api/v1/routes/tasks.py`
+- Local disk metadata and access checks: `backend/app/services/task_service.py`
+
+Comments:
+
+- Add/list paginated: `backend/app/api/v1/routes/tasks.py`
+
+Infrastructure:
+
+- Health checks: `backend/app/api/v1/routes/health.py`
+- Redis caching: `backend/app/services/cache_service.py`
+- Docker Compose: `backend/docker-compose.yml`
+- Alembic migration: `backend/alembic/versions/20260516_0001_day1_foundation.py`
+- Environment config: `backend/app/core/config.py` and `backend/.env.example`
+
+Tests:
+
+- Auth tests: `backend/tests/test_auth.py`
+- Workspace, task, IDOR, file, comment, cache tests: `backend/tests/test_workspaces_tasks.py`
+
+Frontend:
+
+- Full-stack dashboard: `frontend/src/main.jsx`
+- Styling: `frontend/src/styles.css`
+
+## 24. Key Interview Talking Points
 
 - I separated route handlers, business logic, and database queries so the code is easier to test and extend.
 - I used bcrypt for passwords because passwords need slow one-way hashing.
@@ -1007,4 +1161,5 @@ Example: Task Assignment
 - I enforce workspace membership before returning workspace, task, attachment, or comment data.
 - I return `404` for resources outside a user's workspace to avoid IDOR information leaks.
 - I validate task assignees against workspace membership.
+- I added a full-stack React dashboard to demonstrate the API through real product workflows.
 - I kept the frontend simple because the backend is the evaluation focus.

@@ -55,6 +55,7 @@ understanding.md        # detailed interview explanation guide
 - Health endpoints for app, database, and Redis checks
 - Docker Compose setup for FastAPI, PostgreSQL, and Redis
 - Simple React dashboard for registration, login, token refresh, and profile loading
+- Full-stack dashboard for workspaces, members, task filters, task workflow, comments, and attachments
 
 ## Run With Docker Compose
 
@@ -109,6 +110,19 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. Set `VITE_API_BASE_URL` in `frontend/.env` if your API is not running at `http://localhost:8000/api/v1`.
+
+The frontend demonstrates:
+
+- Register and login
+- Create and switch workspaces
+- Invite and remove workspace members
+- Create tasks with priority, assignee, description, and deadline
+- Filter tasks by status, priority, and assignee
+- Move tasks through the workflow
+- Soft-delete tasks
+- View task summaries
+- Add comments
+- Upload and download attachments
 
 ## Configuration
 
@@ -179,3 +193,20 @@ System:
 - Workspace invites currently add an already-registered user by email. A full invitation acceptance flow can be added later with pending invitation tokens.
 - Files are stored on local disk under `UPLOAD_DIR`. Production deployments should use durable object storage such as S3.
 - Use `understanding.md` as the explanation guide for architecture, security choices, and implementation details.
+
+## Design Decisions And Tradeoffs
+
+- Route handlers stay thin and delegate business logic to services.
+- Repositories own database query details so access-control queries are centralized and testable.
+- Workspace membership is checked before returning workspace, task, attachment, or comment data.
+- Access tokens are short-lived JWTs; refresh tokens are opaque, rotated, and stored only as hashes.
+- Redis cache is used for workspace details and task summaries, but the API falls back to the database if Redis is unavailable.
+- Email notifications are synchronous for simplicity. In production, this should move to background jobs.
+- The React frontend stores tokens in `localStorage` because it is a demo dashboard. A production browser app should use a stronger token storage strategy such as HttpOnly cookies.
+
+## Known Limitations
+
+- Inviting an email requires the user to already have an account.
+- Local file storage is suitable for this project, but production should use object storage.
+- Docker Compose is provided, but CI/CD pipeline automation is not included.
+- PostgreSQL is the target database; tests use SQLite for fast local isolation.
