@@ -56,6 +56,7 @@ understanding.md        # detailed interview explanation guide
 - Docker Compose setup for FastAPI, PostgreSQL, and Redis
 - Simple React dashboard for registration, login, token refresh, and profile loading
 - Full-stack dashboard for workspaces, members, task filters, task workflow, comments, and attachments
+- Demo data seeding for the logged-in user from the frontend or API
 
 ## Run With Docker Compose
 
@@ -114,7 +115,9 @@ Open `http://localhost:5173`. Set `VITE_API_BASE_URL` in `frontend/.env` if your
 The frontend demonstrates:
 
 - Register and login
+- Use simple demo password `1234`
 - Create and switch workspaces
+- Populate a ready-to-use demo workspace
 - Invite and remove workspace members
 - Create tasks with priority, assignee, description, and deadline
 - Filter tasks by status, priority, and assignee
@@ -154,6 +157,10 @@ Authentication:
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/refresh`
 - `GET /api/v1/auth/me`
+
+Demo:
+
+- `POST /api/v1/demo/seed`
 
 Workspaces:
 
@@ -203,6 +210,7 @@ System:
 - Redis cache is used for workspace details and task summaries, but the API falls back to the database if Redis is unavailable.
 - Email notifications are synchronous for simplicity. In production, this should move to background jobs.
 - The React frontend stores tokens in `localStorage` because it is a demo dashboard. A production browser app should use a stronger token storage strategy such as HttpOnly cookies.
+- Password validation is intentionally set to a 4-character minimum so the demo can use `1234`. A production system should require a stronger password policy.
 
 ## Known Limitations
 
@@ -210,3 +218,4 @@ System:
 - Local file storage is suitable for this project, but production should use object storage.
 - Docker Compose is provided, but CI/CD pipeline automation is not included.
 - PostgreSQL is the target database; tests use SQLite for fast local isolation.
+- Demo data seeding is intended for local review and should be disabled or protected differently in production.

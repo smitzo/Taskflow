@@ -32,7 +32,7 @@ function App() {
   const [authForm, setAuthForm] = useState({
     email: "ada@example.com",
     full_name: "Ada Lovelace",
-    password: "StrongPass123",
+    password: "1234",
   });
   const [tokens, setTokens] = useState(() => {
     const raw = localStorage.getItem("taskflow_tokens");
@@ -88,7 +88,7 @@ function App() {
     const contentType = response.headers.get("content-type") ?? "";
     const body = contentType.includes("application/json") ? await response.json() : await response.blob();
     if (!response.ok) {
-      throw new Error(body?.detail ?? "Request failed");
+      throw new Error(formatApiError(body?.detail));
     }
     return body;
   }
@@ -149,7 +149,6 @@ function App() {
       const nextTokens = await request("/auth/refresh", {
         method: "POST",
         body: JSON.stringify({ refresh_token: tokens.refresh_token }),
-        headers: {},
       });
       saveTokens(nextTokens);
       setMessage("Token refreshed.");
@@ -220,6 +219,7 @@ function App() {
       const nextWorkspaces = await request("/workspaces");
       setWorkspaces(nextWorkspaces);
       setSelectedWorkspaceId(workspace.id);
+      await loadWorkspaceBundle(workspace.id);
       setMessage("Workspace created.");
     } catch (error) {
       setMessage(error.message);
@@ -240,6 +240,22 @@ function App() {
       setInviteEmail("");
       await loadWorkspaceBundle(selectedWorkspaceId);
       setMessage("Member invited.");
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function populateDemoData() {
+    setLoading(true);
+    try {
+      const seed = await request("/demo/seed", { method: "POST" });
+      const nextWorkspaces = await request("/workspaces");
+      setWorkspaces(nextWorkspaces);
+      setSelectedWorkspaceId(seed.workspace_id);
+      await loadWorkspaceBundle(seed.workspace_id);
+      setMessage(seed.message);
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -441,7 +457,7 @@ function App() {
                 value={authForm.password}
                 onChange={updateAuthField}
                 required
-                minLength={8}
+                minLength={4}
               />
             </label>
             <button className="primary" disabled={loading} type="submit">
@@ -488,6 +504,9 @@ function App() {
           <button onClick={refreshToken} disabled={loading} type="button">
             <KeyRound size={16} /> Refresh token
           </button>
+          <button onClick={populateDemoData} disabled={loading} type="button">
+            <Plus size={16} /> Populate demo data
+          </button>
         </div>
 
         <form onSubmit={createWorkspace} className="form compact-form">
@@ -531,6 +550,7 @@ function App() {
         {!selectedWorkspace ? (
           <section className="empty-state">
             <h2>No workspace selected</h2>
+            <p>Create a workspace or populate demo data to start using the task board.</p>
           </section>
         ) : (
           <>
@@ -817,6 +837,19 @@ function Metric({ label, value }) {
 
 function formatLabel(value) {
   return value.replaceAll("_", " ");
+}
+
+function formatApiError(detail) {
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item.msg ?? JSON.stringify(item)).join(", ");
+  }
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (detail) {
+    return JSON.stringify(detail);
+  }
+  return "Request failed";
 }
 
 createRoot(document.getElementById("root")).render(<App />);

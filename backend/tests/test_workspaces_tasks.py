@@ -8,7 +8,7 @@ import app.services.workspace_service as workspace_service_module
 
 
 def register_and_login(client: TestClient, email: str, full_name: str = "Test User") -> tuple[str, str]:
-    password = "StrongPass123"
+    password = "1234"
     register_response = client.post(
         "/api/v1/auth/register",
         json={"email": email, "full_name": full_name, "password": password},
@@ -308,3 +308,30 @@ def test_workspace_detail_and_task_summary_use_cache(client: TestClient, monkeyp
     assert second_summary.status_code == 200
     assert first_summary.json()["total"] == 1
     assert second_summary.json()["total"] == 42
+
+
+def test_demo_seed_creates_workspace_tasks_and_comments(client: TestClient) -> None:
+    _owner_id, owner_token = register_and_login(client, "owner@example.com", "Owner User")
+
+    seed_response = client.post("/api/v1/demo/seed", headers=auth_header(owner_token))
+    assert seed_response.status_code == 201
+    seed = seed_response.json()
+    assert seed["workspace_created"] is True
+    assert seed["tasks_created"] == 4
+
+    tasks_response = client.get(
+        f"/api/v1/workspaces/{seed['workspace_id']}/tasks?page=1&size=10",
+        headers=auth_header(owner_token),
+    )
+    assert tasks_response.status_code == 200
+    assert tasks_response.json()["total"] == 4
+
+    first_task_id = tasks_response.json()["items"][0]["id"]
+    comments_response = client.get(f"/api/v1/tasks/{first_task_id}/comments", headers=auth_header(owner_token))
+    assert comments_response.status_code == 200
+    assert comments_response.json()["total"] == 1
+
+    second_seed_response = client.post("/api/v1/demo/seed", headers=auth_header(owner_token))
+    assert second_seed_response.status_code == 201
+    assert second_seed_response.json()["workspace_created"] is False
+    assert second_seed_response.json()["tasks_created"] == 0

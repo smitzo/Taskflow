@@ -1109,6 +1109,13 @@ Authentication:
 - Login with access and refresh token: `backend/app/api/v1/routes/auth.py`
 - Refresh token rotation: `backend/app/services/auth_service.py`
 - Protected `/me`: `backend/app/api/v1/routes/auth.py`
+- Password minimum is currently 4 characters for demo usability. The frontend defaults to `1234`; production should use a stronger policy.
+
+Demo data:
+
+- Protected seed endpoint: `backend/app/api/v1/routes/demo.py`
+- Demo workspace/task/comment generation: `backend/app/services/demo_service.py`
+- Frontend demo button: `frontend/src/main.jsx`
 
 Workspaces:
 

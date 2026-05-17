@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 
 def register_payload(email: str = "ada@example.com") -> dict[str, str]:
-    return {"email": email, "full_name": "Ada Lovelace", "password": "StrongPass123"}
+    return {"email": email, "full_name": "Ada Lovelace", "password": "1234"}
 
 
 def test_user_can_register_login_refresh_and_read_profile(client: TestClient) -> None:
@@ -13,7 +13,7 @@ def test_user_can_register_login_refresh_and_read_profile(client: TestClient) ->
 
     login_response = client.post(
         "/api/v1/auth/login",
-        json={"email": "ada@example.com", "password": "StrongPass123"},
+        json={"email": "ada@example.com", "password": "1234"},
     )
     assert login_response.status_code == 200
     tokens = login_response.json()
@@ -49,4 +49,3 @@ def test_wrong_password_is_rejected(client: TestClient) -> None:
 def test_me_requires_access_token(client: TestClient) -> None:
     response = client.get("/api/v1/auth/me")
     assert response.status_code == 401
-
