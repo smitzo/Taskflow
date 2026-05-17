@@ -48,6 +48,9 @@ understanding.md        # detailed interview explanation guide
 - Email notification hooks for workspace invitations and task assignment
 - Local file upload/download for task attachments
 - Task comments with paginated listing
+- Redis-backed caching for workspace details and task summaries with safe fallback when Redis is disabled or unavailable
+- Task summary endpoint with status and priority counts
+- Expanded tests for auth, RBAC, IDOR, pagination, soft delete, file upload/download, comments, and caching behavior
 - Alembic migration for the database schema
 - Health endpoints for app, database, and Redis checks
 - Docker Compose setup for FastAPI, PostgreSQL, and Redis
@@ -113,6 +116,8 @@ Copy `backend/.env.example` to `backend/.env` and update values as needed:
 
 - `DATABASE_URL`
 - `REDIS_URL`
+- `CACHE_ENABLED`
+- `CACHE_TTL_SECONDS`
 - `JWT_SECRET_KEY`
 - `ACCESS_TOKEN_EXPIRE_MINUTES`
 - `REFRESH_TOKEN_EXPIRE_DAYS`
@@ -149,6 +154,7 @@ Tasks:
 
 - `POST /api/v1/workspaces/{workspace_id}/tasks`
 - `GET /api/v1/workspaces/{workspace_id}/tasks`
+- `GET /api/v1/workspaces/{workspace_id}/tasks/summary`
 - `GET /api/v1/tasks/{task_id}`
 - `PATCH /api/v1/tasks/{task_id}`
 - `PATCH /api/v1/tasks/{task_id}/status`
@@ -169,6 +175,7 @@ System:
 ## Notes
 
 - Keep secrets in environment variables, not source code.
+- Caching can be disabled with `CACHE_ENABLED=false`, which is useful for tests or local development without Redis.
 - Workspace invites currently add an already-registered user by email. A full invitation acceptance flow can be added later with pending invitation tokens.
 - Files are stored on local disk under `UPLOAD_DIR`. Production deployments should use durable object storage such as S3.
 - Use `understanding.md` as the explanation guide for architecture, security choices, and implementation details.

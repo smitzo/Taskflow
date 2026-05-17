@@ -7,7 +7,8 @@ from app.models.workspace import Workspace
 from app.models.workspace_member import WorkspaceMember, WorkspaceRole
 from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_repository import WorkspaceRepository
-from app.schemas.workspace import WorkspaceCreate, WorkspaceMemberRead, WorkspaceUpdate
+from app.schemas.workspace import WorkspaceCreate, WorkspaceDetail, WorkspaceMemberRead, WorkspaceUpdate
+from app.services.cache_service import CacheService
 from app.services.email_service import EmailService
 
 
@@ -17,31 +18,45 @@ class WorkspaceService:
         self.workspaces = WorkspaceRepository(db)
         self.users = UserRepository(db)
         self.email = EmailService()
+        self.cache = CacheService()
 
     def create(self, payload: WorkspaceCreate, current_user: User) -> Workspace:
         workspace = self.workspaces.create(payload.name, payload.description, current_user.id)
         self.db.commit()
         self.db.refresh(workspace)
+        self._invalidate_user_workspace_list(current_user.id)
         return workspace
 
     def list_for_user(self, current_user: User) -> list[Workspace]:
         return self.workspaces.list_for_user(current_user.id)
 
-    def get_detail(self, workspace_id: str, current_user: User) -> Workspace:
+    def get_detail(self, workspace_id: str, current_user: User) -> WorkspaceDetail:
+        membership = self.workspaces.get_membership(workspace_id, current_user.id)
+        if membership is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+        cache_key = self._workspace_detail_cache_key(workspace_id)
+        cached = self.cache.get_json(cache_key)
+        if isinstance(cached, dict):
+            return WorkspaceDetail.model_validate(cached)
+
         workspace = self.workspaces.get_detail_for_user(workspace_id, current_user.id)
         if workspace is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
-        return workspace
+        detail = self._serialize_workspace_detail(workspace)
+        self.cache.set_json(cache_key, detail)
+        return WorkspaceDetail.model_validate(detail)
 
     def update(self, workspace_id: str, payload: WorkspaceUpdate, current_user: User) -> Workspace:
         workspace, _membership = self._require_owner(workspace_id, current_user.id)
         if payload.name is not None:
             workspace.name = payload.name
-        if payload.description is not None:
+        if "description" in payload.model_fields_set:
             workspace.description = payload.description
         self.db.add(workspace)
         self.db.commit()
         self.db.refresh(workspace)
+        self._invalidate_workspace(workspace_id)
         return workspace
 
     def invite_member(self, workspace_id: str, email: str, current_user: User) -> WorkspaceMemberRead:
@@ -62,6 +77,8 @@ class WorkspaceService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already a workspace member") from None
 
         self.db.refresh(membership)
+        self._invalidate_workspace(workspace_id)
+        self._invalidate_user_workspace_list(invited_user.id)
         self.email.send_email(
             to_email=invited_user.email,
             subject=f"You were added to {workspace.name}",
@@ -80,6 +97,8 @@ class WorkspaceService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove another owner")
         self.workspaces.remove_member(membership)
         self.db.commit()
+        self._invalidate_workspace(workspace_id)
+        self._invalidate_user_workspace_list(user_id)
 
     def require_member(self, workspace_id: str, user_id: str) -> WorkspaceMember:
         membership = self.workspaces.get_membership(workspace_id, user_id)
@@ -96,3 +115,34 @@ class WorkspaceService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner role required")
         return workspace, membership
 
+    def _serialize_workspace_detail(self, workspace: Workspace) -> dict:
+        return {
+            "id": workspace.id,
+            "name": workspace.name,
+            "description": workspace.description,
+            "created_by_id": workspace.created_by_id,
+            "created_at": workspace.created_at,
+            "members": [
+                {
+                    "user": {
+                        "id": member.user.id,
+                        "email": member.user.email,
+                        "full_name": member.user.full_name,
+                        "is_active": member.user.is_active,
+                        "created_at": member.user.created_at,
+                    },
+                    "role": member.role.value,
+                    "joined_at": member.created_at,
+                }
+                for member in workspace.members
+            ],
+        }
+
+    def _workspace_detail_cache_key(self, workspace_id: str) -> str:
+        return f"workspace:{workspace_id}:detail"
+
+    def _invalidate_workspace(self, workspace_id: str) -> None:
+        self.cache.delete(self._workspace_detail_cache_key(workspace_id), f"workspace:{workspace_id}:task_summary")
+
+    def _invalidate_user_workspace_list(self, user_id: str) -> None:
+        self.cache.delete(f"user:{user_id}:workspaces")

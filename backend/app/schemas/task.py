@@ -70,3 +70,11 @@ class TaskDetail(TaskRead):
     attachments: list[AttachmentRead]
     comments: list[CommentRead]
 
+
+class TaskSummary(BaseModel):
+    total: int
+    todo: int
+    in_progress: int
+    review: int
+    done: int
+    by_priority: dict[str, int]

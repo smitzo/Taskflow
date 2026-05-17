@@ -13,7 +13,8 @@ from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.schemas.common import PaginatedResponse
-from app.schemas.task import CommentCreate, CommentRead, TaskCreate, TaskRead, TaskUpdate
+from app.schemas.task import CommentCreate, CommentRead, TaskCreate, TaskRead, TaskSummary, TaskUpdate
+from app.services.cache_service import CacheService
 from app.services.email_service import EmailService
 
 
@@ -30,6 +31,7 @@ class TaskService:
         self.workspaces = WorkspaceRepository(db)
         self.users = UserRepository(db)
         self.email = EmailService()
+        self.cache = CacheService()
 
     def create(self, workspace_id: str, payload: TaskCreate, current_user: User) -> Task:
         self._require_workspace_member(workspace_id, current_user.id)
@@ -45,6 +47,7 @@ class TaskService:
         )
         self.db.commit()
         self.db.refresh(task)
+        self._invalidate_workspace_task_cache(workspace_id)
         self._send_assignment_email(task, payload.assignee_id, current_user)
         return task
 
@@ -72,6 +75,17 @@ class TaskService:
         )
         return PaginatedResponse[TaskRead](items=items, page=page, size=size, total=total)
 
+    def summarize_workspace(self, workspace_id: str, current_user: User) -> TaskSummary:
+        self._require_workspace_member(workspace_id, current_user.id)
+        cache_key = f"workspace:{workspace_id}:task_summary"
+        cached = self.cache.get_json(cache_key)
+        if isinstance(cached, dict):
+            return TaskSummary.model_validate(cached)
+
+        summary = self.tasks.summarize_workspace(workspace_id)
+        self.cache.set_json(cache_key, summary)
+        return TaskSummary.model_validate(summary)
+
     def get_detail(self, task_id: str, current_user: User) -> Task:
         return self._require_task_access(task_id, current_user.id)
 
@@ -81,19 +95,21 @@ class TaskService:
 
         if payload.title is not None:
             task.title = payload.title
-        if payload.description is not None:
+        if "description" in payload.model_fields_set:
             task.description = payload.description
         if payload.priority is not None:
             task.priority = payload.priority
-        if payload.deadline is not None:
+        if "deadline" in payload.model_fields_set:
             task.deadline = payload.deadline
-        if payload.assignee_id is not None:
-            self._validate_assignee(task.workspace_id, payload.assignee_id)
+        if "assignee_id" in payload.model_fields_set:
+            if payload.assignee_id is not None:
+                self._validate_assignee(task.workspace_id, payload.assignee_id)
             task.assignee_id = payload.assignee_id
 
         self.db.add(task)
         self.db.commit()
         self.db.refresh(task)
+        self._invalidate_workspace_task_cache(task.workspace_id)
 
         if payload.assignee_id is not None and payload.assignee_id != previous_assignee_id:
             self._send_assignment_email(task, payload.assignee_id, current_user)
@@ -113,6 +129,7 @@ class TaskService:
         self.db.add(task)
         self.db.commit()
         self.db.refresh(task)
+        self._invalidate_workspace_task_cache(task.workspace_id)
         return task
 
     def soft_delete(self, task_id: str, current_user: User) -> None:
@@ -120,6 +137,7 @@ class TaskService:
         task.is_deleted = True
         self.db.add(task)
         self.db.commit()
+        self._invalidate_workspace_task_cache(task.workspace_id)
 
     def attach_file(self, task_id: str, file: UploadFile, current_user: User) -> Attachment:
         task = self._require_task_access(task_id, current_user.id)
@@ -142,6 +160,7 @@ class TaskService:
         )
         self.db.commit()
         self.db.refresh(attachment)
+        self._invalidate_task_detail_cache(task.id)
         return attachment
 
     def get_attachment_file(self, attachment_id: str, current_user: User) -> tuple[Attachment, Path]:
@@ -158,6 +177,7 @@ class TaskService:
         comment = self.tasks.add_comment(task_id=task.id, author_id=current_user.id, body=payload.body)
         self.db.commit()
         self.db.refresh(comment)
+        self._invalidate_task_detail_cache(task.id)
         return comment
 
     def list_comments(self, task_id: str, current_user: User, page: int, size: int) -> PaginatedResponse[CommentRead]:
@@ -195,3 +215,8 @@ class TaskService:
             body=f"{actor.full_name} assigned you the TaskFlow task '{task.title}'.",
         )
 
+    def _invalidate_workspace_task_cache(self, workspace_id: str) -> None:
+        self.cache.delete(f"workspace:{workspace_id}:task_summary")
+
+    def _invalidate_task_detail_cache(self, task_id: str) -> None:
+        self.cache.delete(f"task:{task_id}:detail")

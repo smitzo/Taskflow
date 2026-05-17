@@ -11,6 +11,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://taskflow:taskflow@localhost:5432/taskflow"
     redis_url: str = "redis://localhost:6379/0"
+    cache_enabled: bool = True
+    cache_ttl_seconds: int = 300
     upload_dir: str = "storage/uploads"
 
     jwt_secret_key: str = Field(min_length=32, default="change-this-secret-in-your-env-file-please")

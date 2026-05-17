@@ -14,6 +14,7 @@ from app.schemas.task import (
     TaskDetail,
     TaskRead,
     TaskStatusUpdate,
+    TaskSummary,
     TaskUpdate,
 )
 from app.services.task_service import TaskService
@@ -51,6 +52,15 @@ def list_tasks(
         page=page,
         size=size,
     )
+
+
+@router.get("/workspaces/{workspace_id}/tasks/summary", response_model=TaskSummary)
+def get_task_summary(
+    workspace_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return TaskService(db).summarize_workspace(workspace_id, current_user)
 
 
 @router.get("/tasks/{task_id}", response_model=TaskDetail)
@@ -131,4 +141,3 @@ def list_comments(
     current_user: User = Depends(get_current_user),
 ):
     return TaskService(db).list_comments(task_id, current_user, page, size)
-

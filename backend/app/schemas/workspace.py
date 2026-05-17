@@ -38,4 +38,3 @@ class WorkspaceRead(BaseModel):
 
 class WorkspaceDetail(WorkspaceRead):
     members: list[WorkspaceMemberRead]
-

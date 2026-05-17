@@ -96,6 +96,8 @@ Important settings:
 
 - `DATABASE_URL`
 - `REDIS_URL`
+- `CACHE_ENABLED`
+- `CACHE_TTL_SECONDS`
 - `JWT_SECRET_KEY`
 - `JWT_ALGORITHM`
 - `ACCESS_TOKEN_EXPIRE_MINUTES`
@@ -551,8 +553,11 @@ What tests cover:
 - Workspace creation and member invitations
 - Owner-only workspace update enforcement
 - Task creation and status workflow validation
+- Task filtering, pagination, summaries, and soft delete behavior
 - Task comments and file attachment upload/download
 - IDOR prevention for workspace and task reads
+- Membership removal revoking later access
+- Cache behavior for workspace details and task summaries
 
 How test database works:
 
@@ -560,7 +565,7 @@ How test database works:
 
 Tradeoff:
 
-SQLite is fast but not identical to PostgreSQL. For Day 3, add integration tests against the Docker Postgres service to catch database-specific issues.
+SQLite is fast but not identical to PostgreSQL. This suite gives quick local feedback, while a larger production pipeline should also run Docker-backed PostgreSQL integration tests.
 
 ## 18. React Frontend
 
@@ -780,15 +785,175 @@ Tradeoff:
 
 Synchronous email is simple and explicit. In production, sending should move to a background job queue so user requests do not wait on SMTP latency.
 
-## 20. Day 3 Implementation Plan
+## 20. Day 3 Backend Quality And Caching
 
-Day 3 should add:
+Day 3 adds backend polish around caching, test coverage, and API completeness.
 
-- Redis caching for workspace details or task summaries
-- More PostgreSQL-backed integration tests
-- Broader pagination/filtering tests
-- More README polish around submission
-- Optional rate limiting or activity logs
+Main locations:
+
+- Cache service: `backend/app/services/cache_service.py`
+- Cache configuration: `backend/app/core/config.py`
+- Workspace cache usage: `backend/app/services/workspace_service.py`
+- Task summary cache usage: `backend/app/services/task_service.py`
+- Task summary query: `backend/app/repositories/task_repository.py`
+- Task summary schema: `backend/app/schemas/task.py`
+- Expanded tests: `backend/tests/test_workspaces_tasks.py`
+
+### Redis Cache Service
+
+Concept:
+
+Redis is an in-memory data store often used as a cache. Expensive or frequently requested reads can be served from Redis instead of recomputing them from the database every time.
+
+Implementation:
+
+`CacheService` wraps Redis access with three important behaviors:
+
+- `get_json()` reads JSON data from Redis.
+- `set_json()` writes JSON data with a TTL.
+- `delete()` and `delete_pattern()` invalidate stale keys.
+
+The service reads:
+
+- `REDIS_URL`
+- `CACHE_ENABLED`
+- `CACHE_TTL_SECONDS`
+
+If `CACHE_ENABLED=false`, the cache service does nothing. If Redis is unavailable, cache operations fail quietly and the API continues to use the database.
+
+Why this is production friendly:
+
+Caching should improve performance but not become a single point of failure for normal product reads. If Redis is down, the API should still work, just without cached reads.
+
+Tradeoff:
+
+Silent cache fallback is good for availability, but observability should be added later. In production, cache failures should be logged through structured logging or metrics.
+
+### Cached Workspace Details
+
+Location:
+
+- `backend/app/services/workspace_service.py`
+
+Flow:
+
+1. The user requests `GET /api/v1/workspaces/{workspace_id}`.
+2. The service first checks membership with `WorkspaceRepository.get_membership()`.
+3. If the user is not a member, it returns `404`.
+4. If the user is a member, it checks Redis key `workspace:{workspace_id}:detail`.
+5. If cached data exists, it returns that.
+6. Otherwise it queries the database, serializes the detail response, stores it in Redis, and returns it.
+
+Security detail:
+
+Membership is checked before reading from cache. This matters because cached workspace details contain member data. Without the membership check, cache could accidentally become an authorization bypass.
+
+Invalidation:
+
+Workspace detail cache is invalidated when:
+
+- workspace metadata changes
+- a member is invited
+- a member is removed
+
+### Cached Task Summary
+
+Locations:
+
+- `backend/app/api/v1/routes/tasks.py`
+- `backend/app/services/task_service.py`
+- `backend/app/repositories/task_repository.py`
+- `backend/app/schemas/task.py`
+
+Endpoint:
+
+`GET /api/v1/workspaces/{workspace_id}/tasks/summary`
+
+Response includes:
+
+- total active tasks
+- count by status
+- count by priority
+
+Implementation:
+
+`TaskRepository.summarize_workspace()` groups tasks by status and priority while excluding soft-deleted tasks.
+
+`TaskService.summarize_workspace()` checks membership, then reads/writes Redis key `workspace:{workspace_id}:task_summary`.
+
+Invalidation:
+
+Task summary cache is invalidated when:
+
+- a task is created
+- a task is updated
+- task status changes
+- a task is soft-deleted
+
+Tradeoff:
+
+The summary cache uses simple key invalidation. This is easy to reason about. For very high write volume, more advanced strategies such as event-driven invalidation or write-through counters might be considered.
+
+### Pagination And Filtering Tests
+
+Location:
+
+- `backend/tests/test_workspaces_tasks.py`
+
+The tests verify:
+
+- priority filtering
+- page and size parameters
+- total count
+- soft-deleted tasks disappearing from details and summaries
+
+Why this matters:
+
+Pagination bugs are common in real APIs. The test makes sure the response shape includes both `items` and `total`, so a frontend can build reliable paginated views.
+
+### RBAC And IDOR Test Coverage
+
+The test suite now verifies:
+
+- non-owners cannot update workspaces
+- outsiders cannot read another workspace
+- outsiders cannot read another task
+- removed members lose later workspace and task access
+
+This directly supports the security requirements from the assignment.
+
+### PATCH Semantics For Nullable Fields
+
+Location:
+
+- `backend/app/services/task_service.py`
+- `backend/app/services/workspace_service.py`
+
+Concept:
+
+In PATCH requests, omitted fields and explicit `null` should mean different things:
+
+- omitted field: leave existing value unchanged
+- explicit `null`: clear the nullable value
+
+Implementation:
+
+The services use Pydantic v2's `model_fields_set` to detect whether a field was actually sent.
+
+Example:
+
+```json
+{
+  "assignee_id": null,
+  "description": null
+}
+```
+
+This clears the task assignee and description. If those keys are omitted, the existing values remain unchanged.
+
+Why this matters:
+
+Without this distinction, clients cannot clear fields like assignee, deadline, or description through the API.
 
 ## 21. How To Explain The Request Lifecycle
 

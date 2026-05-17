@@ -71,4 +71,3 @@ def remove_member(
 ):
     WorkspaceService(db).remove_member(workspace_id, user_id, current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-

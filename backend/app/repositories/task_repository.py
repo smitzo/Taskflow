@@ -122,3 +122,26 @@ class TaskRepository:
             .all()
         )
         return items, total
+
+    def summarize_workspace(self, workspace_id: str) -> dict:
+        status_rows = self.db.execute(
+            select(Task.status, func.count())
+            .where(Task.workspace_id == workspace_id, Task.is_deleted.is_(False))
+            .group_by(Task.status)
+        ).all()
+        priority_rows = self.db.execute(
+            select(Task.priority, func.count())
+            .where(Task.workspace_id == workspace_id, Task.is_deleted.is_(False))
+            .group_by(Task.priority)
+        ).all()
+
+        status_counts = {status.value: count for status, count in status_rows}
+        priority_counts = {priority.value: count for priority, count in priority_rows}
+        return {
+            "total": sum(status_counts.values()),
+            "todo": status_counts.get(TaskStatus.TODO.value, 0),
+            "in_progress": status_counts.get(TaskStatus.IN_PROGRESS.value, 0),
+            "review": status_counts.get(TaskStatus.REVIEW.value, 0),
+            "done": status_counts.get(TaskStatus.DONE.value, 0),
+            "by_priority": {priority.value: priority_counts.get(priority.value, 0) for priority in TaskPriority},
+        }
