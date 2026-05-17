@@ -5,6 +5,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.2.1
 psycopg[binary]==3.2.3
 pydantic-settings==2.6.1
+python-multipart==0.0.17
 python-jose[cryptography]==3.3.0
 redis==5.2.0
 SQLAlchemy==2.0.36

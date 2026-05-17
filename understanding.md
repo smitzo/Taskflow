@@ -537,6 +537,7 @@ Locations:
 
 - `backend/tests/conftest.py`
 - `backend/tests/test_auth.py`
+- `backend/tests/test_workspaces_tasks.py`
 
 What tests cover:
 
@@ -547,6 +548,11 @@ What tests cover:
 - Duplicate email failure
 - Wrong password failure
 - Missing token failure
+- Workspace creation and member invitations
+- Owner-only workspace update enforcement
+- Task creation and status workflow validation
+- Task comments and file attachment upload/download
+- IDOR prevention for workspace and task reads
 
 How test database works:
 
@@ -582,29 +588,209 @@ Tradeoff:
 
 Tokens are stored in `localStorage` for speed and simplicity. In production, token storage needs a stronger browser security design, often involving HttpOnly cookies.
 
-## 19. Day 2 And Day 3 Implementation Plan
+## 19. Day 2 Backend Features
 
-Day 2 should add:
+Day 2 adds the core product behavior on top of the Day 1 auth foundation.
 
-- Workspace routes
-- Workspace membership checks
-- Owner-only update/remove actions
-- Invite-by-email notification
-- Task CRUD
-- Task status transitions
-- File upload/download
-- Comments
+Main locations:
+
+- Workspace routes: `backend/app/api/v1/routes/workspaces.py`
+- Task, attachment, and comment routes: `backend/app/api/v1/routes/tasks.py`
+- Workspace business logic: `backend/app/services/workspace_service.py`
+- Task business logic: `backend/app/services/task_service.py`
+- Email integration boundary: `backend/app/services/email_service.py`
+- Workspace queries: `backend/app/repositories/workspace_repository.py`
+- Task queries: `backend/app/repositories/task_repository.py`
+- Workspace schemas: `backend/app/schemas/workspace.py`
+- Task/comment/attachment schemas: `backend/app/schemas/task.py`
+- Pagination schema: `backend/app/schemas/common.py`
+
+### Workspace API
+
+Implemented endpoints:
+
+- `POST /api/v1/workspaces`
+- `GET /api/v1/workspaces`
+- `GET /api/v1/workspaces/{workspace_id}`
+- `PATCH /api/v1/workspaces/{workspace_id}`
+- `POST /api/v1/workspaces/{workspace_id}/members`
+- `DELETE /api/v1/workspaces/{workspace_id}/members/{user_id}`
+
+Concept:
+
+A workspace is the tenant boundary. Users do not get global access to all records. They only see workspaces where they have a row in `workspace_members`.
+
+Implementation:
+
+`WorkspaceService.create()` creates the workspace and also creates an owner membership for the creator. This is important because authorization later depends on membership rows, not only `created_by_id`.
+
+Owner-only behavior:
+
+`WorkspaceService._require_owner()` loads both the workspace and the current user's membership. If there is no membership, it returns `404`. If the user is a member but not owner, it returns `403`.
+
+Why `404` for non-members:
+
+Returning `404` prevents IDOR information leaks. An outsider should not be able to learn whether a workspace ID exists.
+
+Invite behavior:
+
+`WorkspaceService.invite_member()` accepts an email, finds an existing registered user, creates a `workspace_members` row, and sends a notification through `EmailService`.
+
+Tradeoff:
+
+The current implementation invites already-registered users. A fuller production system would add a `workspace_invitations` table with pending invitation tokens so non-registered emails can accept later.
+
+### Task API
+
+Implemented endpoints:
+
+- `POST /api/v1/workspaces/{workspace_id}/tasks`
+- `GET /api/v1/workspaces/{workspace_id}/tasks`
+- `GET /api/v1/tasks/{task_id}`
+- `PATCH /api/v1/tasks/{task_id}`
+- `PATCH /api/v1/tasks/{task_id}/status`
+- `DELETE /api/v1/tasks/{task_id}`
+
+Concept:
+
+Tasks belong to workspaces, so every task action first proves the current user is a member of the task's workspace.
+
+Implementation:
+
+`TaskService._require_workspace_member()` protects workspace-scoped task creation and listing.
+
+`TaskService._require_task_access()` protects task-by-ID actions by using `TaskRepository.get_accessible_by_id()`. That repository query joins `tasks` to `workspace_members`, so a user can only load a task if they belong to the task's workspace.
+
+This is the main IDOR prevention pattern for task endpoints.
+
+Task assignment:
+
+When creating or updating a task, `TaskService._validate_assignee()` checks two things:
+
+- the assignee user exists
+- the assignee is a member of the same workspace
+
+This prevents assigning tasks to random users outside the tenant.
+
+Status workflow:
+
+`TaskService.allowed_transitions` defines the allowed workflow:
+
+```text
+todo -> in_progress -> review -> done
+```
+
+The status endpoint rejects skipped transitions, such as `todo -> done`, with `400`.
+
+Soft delete:
+
+`TaskService.soft_delete()` sets `is_deleted = True`. Queries exclude deleted tasks by default. This keeps data available for future audit/history work.
+
+### Pagination And Filtering
+
+Location:
+
+- `backend/app/schemas/common.py`
+- `backend/app/repositories/task_repository.py`
+
+Task listing supports:
+
+- `status`
+- `priority`
+- `assignee_id`
+- `page`
+- `size`
+
+`PaginatedResponse` returns:
+
+- `items`
+- `page`
+- `size`
+- `total`
+
+Tradeoff:
+
+Offset pagination is simple and works well for a take-home project. For very large datasets, cursor pagination is usually better because it avoids deep offset scans.
+
+### File Attachments
+
+Implemented endpoints:
+
+- `POST /api/v1/tasks/{task_id}/attachments`
+- `GET /api/v1/attachments/{attachment_id}`
+
+Concept:
+
+The database stores file metadata. The file bytes are stored on disk under `UPLOAD_DIR`.
+
+Implementation:
+
+`TaskService.attach_file()`:
+
+1. Verifies task access.
+2. Creates the upload directory if needed.
+3. Saves the uploaded file with a UUID-based stored filename.
+4. Stores metadata in the `attachments` table.
+
+`TaskService.get_attachment_file()` verifies that the current user has access to the attachment through the task's workspace before returning the file.
+
+Tradeoff:
+
+Local disk storage is simple for a take-home project. Production should use durable object storage like S3, MinIO, or GCS.
+
+### Comments
+
+Implemented endpoints:
+
+- `POST /api/v1/tasks/{task_id}/comments`
+- `GET /api/v1/tasks/{task_id}/comments`
+
+Concept:
+
+Comments belong to tasks. Since tasks belong to workspaces, comment access is protected by task access.
+
+Implementation:
+
+`TaskService.add_comment()` and `TaskService.list_comments()` both call `_require_task_access()` first. This means outsiders cannot comment on or read comments for tasks outside their workspace.
+
+### Email Notifications
+
+Location:
+
+- `backend/app/services/email_service.py`
+- `backend/app/core/config.py`
+
+Email is used for:
+
+- workspace invitation notifications
+- task assignment notifications
+
+If SMTP is not configured, `EmailService` logs a skipped email message and returns. This makes local setup easy.
+
+If SMTP is configured, it sends email through Python's `smtplib` using:
+
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_FROM_EMAIL`
+- `SMTP_USE_TLS`
+
+Tradeoff:
+
+Synchronous email is simple and explicit. In production, sending should move to a background job queue so user requests do not wait on SMTP latency.
+
+## 20. Day 3 Implementation Plan
 
 Day 3 should add:
 
 - Redis caching for workspace details or task summaries
-- Pagination and filtering tests
-- IDOR tests for workspace/task access
-- More integration tests
-- README polish
+- More PostgreSQL-backed integration tests
+- Broader pagination/filtering tests
+- More README polish around submission
 - Optional rate limiting or activity logs
 
-## 20. How To Explain The Request Lifecycle
+## 21. How To Explain The Request Lifecycle
 
 Example: Login
 
@@ -627,7 +813,24 @@ Example: Protected `/me`
 4. `UserRepository.get_by_id()` loads the current user.
 5. The route returns `UserRead`, which excludes sensitive fields.
 
-## 21. Key Interview Talking Points
+Example: Workspace Details With IDOR Prevention
+
+1. The client calls `GET /api/v1/workspaces/{workspace_id}` with a bearer token.
+2. `get_current_user()` authenticates the user.
+3. `WorkspaceService.get_detail()` calls `WorkspaceRepository.get_detail_for_user()`.
+4. The repository query joins `workspaces` with `workspace_members`.
+5. If the user is not a member, no row is returned.
+6. The API returns `404` instead of leaking whether the workspace exists.
+
+Example: Task Assignment
+
+1. A workspace member calls `POST /api/v1/workspaces/{workspace_id}/tasks`.
+2. `TaskService.create()` verifies the creator is a workspace member.
+3. If `assignee_id` is provided, `_validate_assignee()` verifies the assignee belongs to the same workspace.
+4. The task is created.
+5. `EmailService` sends or logs an assignment notification.
+
+## 22. Key Interview Talking Points
 
 - I separated route handlers, business logic, and database queries so the code is easier to test and extend.
 - I used bcrypt for passwords because passwords need slow one-way hashing.
@@ -636,5 +839,7 @@ Example: Protected `/me`
 - I used environment variables for configuration so secrets are not hardcoded.
 - I added Alembic migrations instead of relying on automatic table creation in production.
 - I prepared multi-tenant models early so Day 2 authorization can be built around workspace membership.
+- I enforce workspace membership before returning workspace, task, attachment, or comment data.
+- I return `404` for resources outside a user's workspace to avoid IDOR information leaks.
+- I validate task assignees against workspace membership.
 - I kept the frontend simple because the backend is the evaluation focus.
-

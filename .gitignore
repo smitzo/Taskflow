@@ -17,3 +17,5 @@ dist/
 *.log
 *.db
 *.db-journal
+storage/
+backend/storage/

@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://taskflow:taskflow@localhost:5432/taskflow"
     redis_url: str = "redis://localhost:6379/0"
+    upload_dir: str = "storage/uploads"
 
     jwt_secret_key: str = Field(min_length=32, default="change-this-secret-in-your-env-file-please")
     jwt_algorithm: str = "HS256"
@@ -18,6 +19,13 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
 
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str = "no-reply@taskflow.local"
+    smtp_use_tls: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -39,4 +47,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

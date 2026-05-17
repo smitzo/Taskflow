@@ -27,3 +27,7 @@ class WorkspaceMember(TimestampMixin, Base):
 
     workspace = relationship("Workspace", back_populates="members")
     user = relationship("User", back_populates="memberships")
+
+    @property
+    def joined_at(self):
+        return self.created_at

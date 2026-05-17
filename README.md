@@ -41,7 +41,13 @@ understanding.md        # detailed interview explanation guide
 - Login with JWT access token and opaque refresh token
 - Refresh-token rotation with hashed refresh tokens stored in the database
 - Protected current-user profile endpoint
-- SQLAlchemy models for users, workspaces, workspace members, tasks, attachments, comments, and refresh tokens
+- Workspace creation, listing, details, owner-only update, member invite, and member removal
+- Workspace-level access control to prevent IDOR
+- Task creation, listing with filters, details, update, status workflow, and soft delete
+- Task assignment validation against workspace membership
+- Email notification hooks for workspace invitations and task assignment
+- Local file upload/download for task attachments
+- Task comments with paginated listing
 - Alembic migration for the database schema
 - Health endpoints for app, database, and Redis checks
 - Docker Compose setup for FastAPI, PostgreSQL, and Redis
@@ -101,20 +107,6 @@ npm run dev
 
 Open `http://localhost:5173`. Set `VITE_API_BASE_URL` in `frontend/.env` if your API is not running at `http://localhost:8000/api/v1`.
 
-## API Endpoints
-
-Authentication:
-
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/refresh`
-- `GET /api/v1/auth/me`
-
-System:
-
-- `GET /health`
-- `GET /api/v1/health`
-
 ## Configuration
 
 Copy `backend/.env.example` to `backend/.env` and update values as needed:
@@ -125,9 +117,58 @@ Copy `backend/.env.example` to `backend/.env` and update values as needed:
 - `ACCESS_TOKEN_EXPIRE_MINUTES`
 - `REFRESH_TOKEN_EXPIRE_DAYS`
 - `CORS_ORIGINS`
+- `UPLOAD_DIR`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_FROM_EMAIL`
+- `SMTP_USE_TLS`
+
+If SMTP settings are empty, email notifications are safely skipped and logged to the console. This keeps local setup simple while leaving the integration point ready for Mailtrap, SES, or SendGrid.
+
+## API Endpoints
+
+Authentication:
+
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
+- `GET /api/v1/auth/me`
+
+Workspaces:
+
+- `POST /api/v1/workspaces`
+- `GET /api/v1/workspaces`
+- `GET /api/v1/workspaces/{workspace_id}`
+- `PATCH /api/v1/workspaces/{workspace_id}`
+- `POST /api/v1/workspaces/{workspace_id}/members`
+- `DELETE /api/v1/workspaces/{workspace_id}/members/{user_id}`
+
+Tasks:
+
+- `POST /api/v1/workspaces/{workspace_id}/tasks`
+- `GET /api/v1/workspaces/{workspace_id}/tasks`
+- `GET /api/v1/tasks/{task_id}`
+- `PATCH /api/v1/tasks/{task_id}`
+- `PATCH /api/v1/tasks/{task_id}/status`
+- `DELETE /api/v1/tasks/{task_id}`
+
+Attachments and comments:
+
+- `POST /api/v1/tasks/{task_id}/attachments`
+- `GET /api/v1/attachments/{attachment_id}`
+- `POST /api/v1/tasks/{task_id}/comments`
+- `GET /api/v1/tasks/{task_id}/comments`
+
+System:
+
+- `GET /health`
+- `GET /api/v1/health`
 
 ## Notes
 
 - Keep secrets in environment variables, not source code.
+- Workspace invites currently add an already-registered user by email. A full invitation acceptance flow can be added later with pending invitation tokens.
+- Files are stored on local disk under `UPLOAD_DIR`. Production deployments should use durable object storage such as S3.
 - Use `understanding.md` as the explanation guide for architecture, security choices, and implementation details.
-
