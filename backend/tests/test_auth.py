@@ -1,4 +1,7 @@
+import pytest
 from fastapi.testclient import TestClient
+
+import app.services.rate_limit_service as rate_limit_module
 
 
 def register_payload(email: str = "ada@example.com") -> dict[str, str]:
@@ -49,3 +52,17 @@ def test_wrong_password_is_rejected(client: TestClient) -> None:
 def test_me_requires_access_token(client: TestClient) -> None:
     response = client.get("/api/v1/auth/me")
     assert response.status_code == 401
+
+
+def test_rate_limit_service_blocks_requests_after_limit(monkeypatch) -> None:
+    rate_limit_module._memory_buckets.clear()
+    monkeypatch.setattr(rate_limit_module.settings, "rate_limit_enabled", True)
+
+    limiter = rate_limit_module.RateLimitService()
+    limiter.check(key="auth:/api/v1/auth/login:test-client", limit=2, window_seconds=60)
+    limiter.check(key="auth:/api/v1/auth/login:test-client", limit=2, window_seconds=60)
+
+    with pytest.raises(Exception) as exc_info:
+        limiter.check(key="auth:/api/v1/auth/login:test-client", limit=2, window_seconds=60)
+
+    assert getattr(exc_info.value, "status_code") == 429

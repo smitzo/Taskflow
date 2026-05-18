@@ -49,3 +49,4 @@ class Task(TimestampMixin, Base):
     workspace = relationship("Workspace", back_populates="tasks")
     attachments = relationship("Attachment", back_populates="task", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="task", cascade="all, delete-orphan")
+    activity_logs = relationship("TaskActivityLog", back_populates="task", cascade="all, delete-orphan")

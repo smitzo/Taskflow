@@ -14,3 +14,4 @@ class Comment(TimestampMixin, Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
 
     task = relationship("Task", back_populates="comments")
+    author = relationship("User")

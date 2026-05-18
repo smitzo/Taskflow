@@ -11,6 +11,7 @@ from app.schemas.task import (
     CommentCreate,
     CommentRead,
     TaskCreate,
+    TaskActivityLogRead,
     TaskDetail,
     TaskRead,
     TaskStatusUpdate,
@@ -141,3 +142,14 @@ def list_comments(
     current_user: User = Depends(get_current_user),
 ):
     return TaskService(db).list_comments(task_id, current_user, page, size)
+
+
+@router.get("/tasks/{task_id}/activity", response_model=PaginatedResponse[TaskActivityLogRead])
+def list_activity(
+    task_id: str,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return TaskService(db).list_activity(task_id, current_user, page, size)

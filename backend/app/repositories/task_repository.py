@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.attachment import Attachment
 from app.models.comment import Comment
 from app.models.task import Task, TaskPriority, TaskStatus
+from app.models.task_activity import TaskActivityLog
 from app.models.workspace_member import WorkspaceMember
 
 
@@ -67,7 +68,11 @@ class TaskRepository:
         statement = (
             select(Task)
             .join(WorkspaceMember, WorkspaceMember.workspace_id == Task.workspace_id)
-            .options(selectinload(Task.attachments), selectinload(Task.comments))
+            .options(
+                selectinload(Task.attachments),
+                selectinload(Task.comments).selectinload(Comment.author),
+                selectinload(Task.activity_logs).selectinload(TaskActivityLog.actor),
+            )
             .where(Task.id == task_id, WorkspaceMember.user_id == user_id)
         )
         if not include_deleted:
@@ -112,11 +117,41 @@ class TaskRepository:
         return comment
 
     def list_comments(self, *, task_id: str, page: int, size: int) -> tuple[list[Comment], int]:
-        statement = select(Comment).where(Comment.task_id == task_id)
+        statement = select(Comment).options(selectinload(Comment.author)).where(Comment.task_id == task_id)
         total = self.db.scalar(select(func.count()).select_from(statement.subquery())) or 0
         items = list(
             self.db.execute(
                 statement.order_by(Comment.created_at.desc()).offset((page - 1) * size).limit(size)
+            )
+            .scalars()
+            .all()
+        )
+        return items, total
+
+    def add_activity_log(
+        self,
+        *,
+        task_id: str,
+        actor_id: str,
+        from_status: TaskStatus | None,
+        to_status: TaskStatus,
+    ) -> TaskActivityLog:
+        log = TaskActivityLog(
+            task_id=task_id,
+            actor_id=actor_id,
+            from_status=from_status,
+            to_status=to_status,
+        )
+        self.db.add(log)
+        self.db.flush()
+        return log
+
+    def list_activity_logs(self, *, task_id: str, page: int, size: int) -> tuple[list[TaskActivityLog], int]:
+        statement = select(TaskActivityLog).options(selectinload(TaskActivityLog.actor)).where(TaskActivityLog.task_id == task_id)
+        total = self.db.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        items = list(
+            self.db.execute(
+                statement.order_by(TaskActivityLog.created_at.desc()).offset((page - 1) * size).limit(size)
             )
             .scalars()
             .all()

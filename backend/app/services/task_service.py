@@ -13,7 +13,7 @@ from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.schemas.common import PaginatedResponse
-from app.schemas.task import CommentCreate, CommentRead, TaskCreate, TaskRead, TaskSummary, TaskUpdate
+from app.schemas.task import CommentCreate, CommentRead, TaskActivityLogRead, TaskCreate, TaskRead, TaskSummary, TaskUpdate
 from app.services.cache_service import CacheService
 from app.services.email_service import EmailService
 
@@ -125,6 +125,13 @@ class TaskService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid status transition from {task.status.value} to {next_status.value}",
             )
+        previous_status = task.status
+        self.tasks.add_activity_log(
+            task_id=task.id,
+            actor_id=current_user.id,
+            from_status=previous_status,
+            to_status=next_status,
+        )
         task.status = next_status
         self.db.add(task)
         self.db.commit()
@@ -184,6 +191,11 @@ class TaskService:
         task = self._require_task_access(task_id, current_user.id)
         items, total = self.tasks.list_comments(task_id=task.id, page=page, size=size)
         return PaginatedResponse[CommentRead](items=items, page=page, size=size, total=total)
+
+    def list_activity(self, task_id: str, current_user: User, page: int, size: int) -> PaginatedResponse[TaskActivityLogRead]:
+        task = self._require_task_access(task_id, current_user.id)
+        items, total = self.tasks.list_activity_logs(task_id=task.id, page=page, size=size)
+        return PaginatedResponse[TaskActivityLogRead](items=items, page=page, size=size, total=total)
 
     def _require_workspace_member(self, workspace_id: str, user_id: str) -> None:
         if self.workspaces.get_membership(workspace_id, user_id) is None:

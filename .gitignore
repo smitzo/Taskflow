@@ -19,3 +19,6 @@ dist/
 *.db-journal
 storage/
 backend/storage/
+
+task.txt
+understanding.md

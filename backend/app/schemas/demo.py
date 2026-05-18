@@ -7,3 +7,7 @@ class DemoSeedResult(BaseModel):
     tasks_created: int
     message: str
 
+
+class DemoClearResult(BaseModel):
+    workspace_removed: bool
+    message: str

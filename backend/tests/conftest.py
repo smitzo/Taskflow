@@ -4,6 +4,7 @@ from collections.abc import Generator
 os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-with-at-least-thirty-two-chars"
 os.environ["CACHE_ENABLED"] = "false"
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 import pytest
 from fastapi.testclient import TestClient

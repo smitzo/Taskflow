@@ -1,6 +1,6 @@
 # TaskFlow
 
-TaskFlow is a multi-tenant team task management API built with FastAPI. It provides authentication, workspace membership, task management, file attachments, comments, and supporting infrastructure for PostgreSQL and Redis.
+TaskFlow is a multi-tenant team task management app built with FastAPI and React. It provides authentication, workspace membership, task management, file attachments, comments, task activity history, and supporting infrastructure for PostgreSQL and Redis.
 
 ## Tech Stack
 
@@ -48,6 +48,9 @@ understanding.md        # detailed interview explanation guide
 - Email notification hooks for workspace invitations and task assignment
 - Local file upload/download for task attachments
 - Task comments with paginated listing
+- Comment responses include the author and timestamp for collaboration context
+- Task activity log for status changes with actor, previous status, next status, and timestamp
+- Redis-backed rate limiting for authentication endpoints with a local fallback when Redis is unavailable
 - Redis-backed caching for workspace details and task summaries with safe fallback when Redis is disabled or unavailable
 - Task summary endpoint with status and priority counts
 - Expanded tests for auth, RBAC, IDOR, pagination, soft delete, file upload/download, comments, and caching behavior
@@ -56,7 +59,7 @@ understanding.md        # detailed interview explanation guide
 - Docker Compose setup for FastAPI, PostgreSQL, and Redis
 - Simple React dashboard for registration, login, token refresh, and profile loading
 - Full-stack dashboard for workspaces, members, task filters, task workflow, comments, and attachments
-- Demo data seeding for the logged-in user from the frontend or API
+- Demo data seeding and cleanup for the logged-in user from the frontend or API
 
 ## Run With Docker Compose
 
@@ -118,13 +121,16 @@ The frontend demonstrates:
 - Use simple demo password `1234`
 - Create and switch workspaces
 - Populate a ready-to-use demo workspace
+- Remove the demo workspace when you want a clean state
 - Invite and remove workspace members
-- Create tasks with priority, assignee, description, and deadline
+- Create tasks with priority, assignee, description, and a default deadline 24 hours from now
 - Filter tasks by status, priority, and assignee
 - Move tasks through the workflow
 - Soft-delete tasks
 - View task summaries
 - Add comments
+- See comment author and timestamp
+- See task status-change activity history
 - Upload and download attachments
 
 ## Configuration
@@ -135,6 +141,9 @@ Copy `backend/.env.example` to `backend/.env` and update values as needed:
 - `REDIS_URL`
 - `CACHE_ENABLED`
 - `CACHE_TTL_SECONDS`
+- `RATE_LIMIT_ENABLED`
+- `AUTH_RATE_LIMIT_MAX_REQUESTS`
+- `AUTH_RATE_LIMIT_WINDOW_SECONDS`
 - `JWT_SECRET_KEY`
 - `ACCESS_TOKEN_EXPIRE_MINUTES`
 - `REFRESH_TOKEN_EXPIRE_DAYS`
@@ -161,6 +170,7 @@ Authentication:
 Demo:
 
 - `POST /api/v1/demo/seed`
+- `DELETE /api/v1/demo/seed`
 
 Workspaces:
 
@@ -179,6 +189,7 @@ Tasks:
 - `GET /api/v1/tasks/{task_id}`
 - `PATCH /api/v1/tasks/{task_id}`
 - `PATCH /api/v1/tasks/{task_id}/status`
+- `GET /api/v1/tasks/{task_id}/activity`
 - `DELETE /api/v1/tasks/{task_id}`
 
 Attachments and comments:
@@ -208,6 +219,7 @@ System:
 - Workspace membership is checked before returning workspace, task, attachment, or comment data.
 - Access tokens are short-lived JWTs; refresh tokens are opaque, rotated, and stored only as hashes.
 - Redis cache is used for workspace details and task summaries, but the API falls back to the database if Redis is unavailable.
+- Authentication rate limiting uses Redis for shared deployments and an in-memory fallback for local development. The fallback is not suitable for multiple app instances because each process has its own counters.
 - Email notifications are synchronous for simplicity. In production, this should move to background jobs.
 - The React frontend stores tokens in `localStorage` because it is a demo dashboard. A production browser app should use a stronger token storage strategy such as HttpOnly cookies.
 - Password validation is intentionally set to a 4-character minimum so the demo can use `1234`. A production system should require a stronger password policy.

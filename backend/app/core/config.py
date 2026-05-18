@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     cache_enabled: bool = True
     cache_ttl_seconds: int = 300
     upload_dir: str = "storage/uploads"
+    rate_limit_enabled: bool = True
+    auth_rate_limit_max_requests: int = 10
+    auth_rate_limit_window_seconds: int = 60
 
     jwt_secret_key: str = Field(min_length=32, default="change-this-secret-in-your-env-file-please")
     jwt_algorithm: str = "HS256"
@@ -39,6 +42,10 @@ class Settings(BaseSettings):
     @classmethod
     def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
+            if value.strip().startswith("["):
+                import json
+
+                return list(json.loads(value))
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 

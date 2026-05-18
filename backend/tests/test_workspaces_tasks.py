@@ -114,6 +114,14 @@ def test_task_creation_status_workflow_comments_and_file_upload(client: TestClie
     assert next_transition.status_code == 200
     assert next_transition.json()["status"] == "in_progress"
 
+    activity_response = client.get(f"/api/v1/tasks/{task['id']}/activity", headers=auth_header(owner_token))
+    assert activity_response.status_code == 200
+    activity = activity_response.json()
+    assert activity["total"] == 1
+    assert activity["items"][0]["actor"]["id"] == owner_id
+    assert activity["items"][0]["from_status"] == "todo"
+    assert activity["items"][0]["to_status"] == "in_progress"
+
     clear_response = client.patch(
         f"/api/v1/tasks/{task['id']}",
         json={"assignee_id": None, "description": None},
@@ -129,6 +137,8 @@ def test_task_creation_status_workflow_comments_and_file_upload(client: TestClie
         headers=auth_header(owner_token),
     )
     assert comment_response.status_code == 201
+    assert comment_response.json()["author"]["full_name"] == "Owner User"
+    assert comment_response.json()["created_at"]
 
     upload_response = client.post(
         f"/api/v1/tasks/{task['id']}/attachments",
@@ -317,21 +327,30 @@ def test_demo_seed_creates_workspace_tasks_and_comments(client: TestClient) -> N
     assert seed_response.status_code == 201
     seed = seed_response.json()
     assert seed["workspace_created"] is True
-    assert seed["tasks_created"] == 4
+    assert seed["tasks_created"] == 11
 
     tasks_response = client.get(
-        f"/api/v1/workspaces/{seed['workspace_id']}/tasks?page=1&size=10",
+        f"/api/v1/workspaces/{seed['workspace_id']}/tasks?page=1&size=20",
         headers=auth_header(owner_token),
     )
     assert tasks_response.status_code == 200
-    assert tasks_response.json()["total"] == 4
+    assert tasks_response.json()["total"] == 11
 
     first_task_id = tasks_response.json()["items"][0]["id"]
     comments_response = client.get(f"/api/v1/tasks/{first_task_id}/comments", headers=auth_header(owner_token))
     assert comments_response.status_code == 200
     assert comments_response.json()["total"] == 1
+    assert comments_response.json()["items"][0]["author"]["email"] == "owner@example.com"
+
+    activity_response = client.get(f"/api/v1/tasks/{first_task_id}/activity", headers=auth_header(owner_token))
+    assert activity_response.status_code == 200
 
     second_seed_response = client.post("/api/v1/demo/seed", headers=auth_header(owner_token))
     assert second_seed_response.status_code == 201
     assert second_seed_response.json()["workspace_created"] is False
     assert second_seed_response.json()["tasks_created"] == 0
+
+    clear_response = client.delete("/api/v1/demo/seed", headers=auth_header(owner_token))
+    assert clear_response.status_code == 200
+    assert clear_response.json()["workspace_removed"] is True
+    assert client.get(f"/api/v1/workspaces/{seed['workspace_id']}", headers=auth_header(owner_token)).status_code == 404

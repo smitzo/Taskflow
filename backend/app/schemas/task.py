@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.task import TaskPriority, TaskStatus
+from app.schemas.user import UserRead
 
 
 class AttachmentRead(BaseModel):
@@ -24,6 +25,7 @@ class CommentRead(BaseModel):
     id: str
     task_id: str
     author_id: str
+    author: UserRead
     body: str
     created_at: datetime
 
@@ -69,6 +71,18 @@ class TaskRead(BaseModel):
 class TaskDetail(TaskRead):
     attachments: list[AttachmentRead]
     comments: list[CommentRead]
+
+
+class TaskActivityLogRead(BaseModel):
+    id: str
+    task_id: str
+    actor_id: str
+    actor: UserRead
+    from_status: TaskStatus | None
+    to_status: TaskStatus
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskSummary(BaseModel):

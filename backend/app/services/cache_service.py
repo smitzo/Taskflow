@@ -47,6 +47,18 @@ class CacheService:
         except Exception:
             return
 
+    def increment(self, key: str, ttl_seconds: int) -> int | None:
+        if self._client is None:
+            return None
+        try:
+            with self._client.pipeline() as pipe:
+                pipe.incr(key)
+                pipe.expire(key, ttl_seconds, nx=True)
+                count, _ = pipe.execute()
+                return int(count)
+        except Exception:
+            return None
+
     def delete(self, *keys: str) -> None:
         if self._client is None or not keys:
             return

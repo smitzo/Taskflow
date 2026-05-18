@@ -1061,7 +1061,225 @@ Why this matters:
 
 Without this distinction, clients cannot clear fields like assignee, deadline, or description through the API.
 
-## 22. How To Explain The Request Lifecycle
+## 22. Bonus Features Added In The Final Full-Stack Pass
+
+These are optional features from `task.txt` that were added after the core backend was complete. They are useful to mention in the interview because they show the project was treated like a real product, not only a list of endpoints.
+
+### Rich Demo Data And Demo Cleanup
+
+Locations:
+
+- `backend/app/api/v1/routes/demo.py`
+- `backend/app/services/demo_service.py`
+- `backend/app/schemas/demo.py`
+- `frontend/src/main.jsx`
+- `frontend/src/styles.css`
+- `backend/tests/test_workspaces_tasks.py`
+
+Endpoints:
+
+- `POST /api/v1/demo/seed`
+- `DELETE /api/v1/demo/seed`
+
+Concept:
+
+Demo data lets a reviewer log in and immediately see a useful workspace without manually creating every task, comment, and workflow state. Demo cleanup lets the same reviewer remove that generated workspace and return to a clean account.
+
+Implementation:
+
+`DemoService.seed_for_user()` looks for a workspace named `TaskFlow Demo` owned by the current user. If it does not exist, it creates one and makes the user the owner through the normal workspace repository path.
+
+It then creates a richer set of sample tasks across `todo`, `in_progress`, `review`, and `done`, adds one comment per sample task, and adds activity rows for demo tasks that are already beyond `todo`.
+
+`DemoService.clear_for_user()` finds the same demo workspace and deletes it only if the current user is the owner. Because workspace relationships use cascade delete, removing the workspace also removes demo tasks, comments, attachments metadata, members, and activity logs.
+
+Frontend behavior:
+
+The dashboard has two small actions:
+
+- `Populate demo data`
+- `Remove demo data`
+
+Both buttons call the backend and then reload workspaces and task state. This proves the UI is bound to real API responses, not hardcoded local demo arrays.
+
+Tradeoff:
+
+The demo workspace is identified by name for simplicity. In a production SaaS product, I would prefer a separate `is_demo` flag or a metadata table so a real user cannot accidentally collide with the reserved demo workspace name.
+
+### Default Task Deadline: 24 Hours From Now
+
+Location:
+
+- `frontend/src/main.jsx`
+
+Concept:
+
+Task creation should be fast. A default deadline reduces friction while still allowing the user to change it.
+
+Implementation:
+
+The frontend uses `createEmptyTaskForm()` instead of a static object. Each time the task form is initialized or reset, it calls:
+
+```jsx
+deadline: toDateTimeLocal(addHours(new Date(), 24))
+```
+
+`addHours()` creates a timestamp 24 hours in the future. `toDateTimeLocal()` formats it for the HTML `datetime-local` input.
+
+Why it is frontend-only:
+
+The backend still accepts `deadline` as optional. This keeps the API flexible for clients that may not want a default deadline, while the React dashboard provides a convenient default for this demo workflow.
+
+Tradeoff:
+
+The default uses the browser's local time. That is good for user experience, but the frontend sends the final value to the backend as ISO time so persisted data is consistent.
+
+### Comment Author And Timestamp
+
+Locations:
+
+- `backend/app/models/comment.py`
+- `backend/app/repositories/task_repository.py`
+- `backend/app/schemas/task.py`
+- `backend/app/services/task_service.py`
+- `frontend/src/main.jsx`
+- `frontend/src/styles.css`
+- `backend/tests/test_workspaces_tasks.py`
+
+Concept:
+
+Comments are collaboration records. A comment without author and time is weak audit information because nobody can explain who said what or when.
+
+Implementation:
+
+`Comment` now has an `author` relationship to `User`.
+
+`CommentRead` includes:
+
+- `author_id`
+- `author`
+- `body`
+- `created_at`
+
+`TaskRepository.list_comments()` uses `selectinload(Comment.author)` so the API can serialize the author without an extra lazy query per comment.
+
+The frontend renders:
+
+- author full name
+- creation timestamp via `formatDateTime()`
+- comment body
+
+Tradeoff:
+
+The response embeds a small `UserRead` object for convenience. For very large comment feeds, a leaner response could return only `author_id` and let the frontend hydrate users from a separate member map.
+
+### Activity Log For Task Status Changes
+
+Locations:
+
+- `backend/app/models/task_activity.py`
+- `backend/app/models/task.py`
+- `backend/app/models/__init__.py`
+- `backend/alembic/versions/20260518_0002_task_activity_logs.py`
+- `backend/app/repositories/task_repository.py`
+- `backend/app/services/task_service.py`
+- `backend/app/api/v1/routes/tasks.py`
+- `backend/app/schemas/task.py`
+- `frontend/src/main.jsx`
+- `frontend/src/styles.css`
+- `backend/tests/test_workspaces_tasks.py`
+
+Endpoint:
+
+`GET /api/v1/tasks/{task_id}/activity`
+
+Concept:
+
+The activity log is an audit trail. It answers: who moved this task, from which status, to which status, and when?
+
+Database model:
+
+`TaskActivityLog` stores:
+
+- `task_id`
+- `actor_id`
+- `from_status`
+- `to_status`
+- `created_at`
+- `updated_at`
+
+`task_id` cascades on task delete because activity belongs to the task. `actor_id` uses `RESTRICT` so the database does not silently erase who performed the action.
+
+Implementation:
+
+`TaskService.change_status()` validates the workflow first. Only valid transitions are recorded.
+
+Important implementation detail:
+
+The service stores `previous_status = task.status` before assigning the new status. Then it creates the activity row with `from_status=previous_status` and `to_status=next_status`. This ordering matters because otherwise the history would incorrectly show the new status as both the old and new value.
+
+The activity endpoint reuses `_require_task_access()`, so users can only read activity for tasks in workspaces they belong to.
+
+Frontend behavior:
+
+When a task is opened, `loadTask()` fetches:
+
+- task detail
+- comments
+- activity history
+
+After advancing a selected task, the frontend reloads the selected task detail so the activity list updates immediately.
+
+Tradeoff:
+
+The current activity log tracks status changes only. A production audit system might also track title, assignee, deadline, description, file, and comment events. I kept the scope aligned to the bonus requirement.
+
+### Authentication Rate Limiting
+
+Locations:
+
+- `backend/app/core/config.py`
+- `backend/.env.example`
+- `backend/app/core/dependencies.py`
+- `backend/app/api/v1/routes/auth.py`
+- `backend/app/services/cache_service.py`
+- `backend/app/services/rate_limit_service.py`
+- `backend/tests/test_auth.py`
+
+Protected endpoints:
+
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
+
+Configuration:
+
+- `RATE_LIMIT_ENABLED`
+- `AUTH_RATE_LIMIT_MAX_REQUESTS`
+- `AUTH_RATE_LIMIT_WINDOW_SECONDS`
+
+Concept:
+
+Auth endpoints are common brute-force targets. Rate limiting reduces repeated guesses and protects expensive password verification work.
+
+Implementation:
+
+`enforce_auth_rate_limit()` is a FastAPI dependency. It builds a key from:
+
+- endpoint path
+- client IP address
+
+Then it calls `RateLimitService.check()`.
+
+`RateLimitService` first tries Redis through `CacheService.increment()`. Redis is preferred because it is shared across app instances. If Redis is disabled or unavailable, it falls back to an in-memory counter so local development and tests still behave predictably.
+
+If the request count exceeds the configured limit, the service raises `429 Too Many Requests`.
+
+Tradeoff:
+
+The in-memory fallback is useful for local runs, but it is not distributed. In production, Redis should stay enabled so all API instances share the same rate-limit counters.
+
+## 23. How To Explain The Request Lifecycle
 
 Example: Login
 
@@ -1101,7 +1319,7 @@ Example: Task Assignment
 4. The task is created.
 5. `EmailService` sends or logs an assignment notification.
 
-## 23. Final Requirement Checklist
+## 24. Final Requirement Checklist
 
 Authentication:
 
@@ -1114,8 +1332,10 @@ Authentication:
 Demo data:
 
 - Protected seed endpoint: `backend/app/api/v1/routes/demo.py`
+- Protected cleanup endpoint: `backend/app/api/v1/routes/demo.py`
 - Demo workspace/task/comment generation: `backend/app/services/demo_service.py`
-- Frontend demo button: `frontend/src/main.jsx`
+- Demo workspace removal: `backend/app/services/demo_service.py`
+- Frontend demo buttons: `frontend/src/main.jsx`
 
 Workspaces:
 
@@ -1137,26 +1357,37 @@ Attachments:
 Comments:
 
 - Add/list paginated: `backend/app/api/v1/routes/tasks.py`
+- Author and timestamp in API response: `backend/app/schemas/task.py` and `backend/app/repositories/task_repository.py`
+
+Bonus:
+
+- Task status activity log model: `backend/app/models/task_activity.py`
+- Activity migration: `backend/alembic/versions/20260518_0002_task_activity_logs.py`
+- Activity endpoint: `backend/app/api/v1/routes/tasks.py`
+- Auth rate limiting dependency: `backend/app/core/dependencies.py`
+- Rate limit service: `backend/app/services/rate_limit_service.py`
 
 Infrastructure:
 
 - Health checks: `backend/app/api/v1/routes/health.py`
 - Redis caching: `backend/app/services/cache_service.py`
+- Redis-backed auth rate limiting: `backend/app/services/rate_limit_service.py`
 - Docker Compose: `backend/docker-compose.yml`
-- Alembic migration: `backend/alembic/versions/20260516_0001_day1_foundation.py`
+- Alembic migrations: `backend/alembic/versions/20260516_0001_day1_foundation.py` and `backend/alembic/versions/20260518_0002_task_activity_logs.py`
 - Environment config: `backend/app/core/config.py` and `backend/.env.example`
 
 Tests:
 
 - Auth tests: `backend/tests/test_auth.py`
-- Workspace, task, IDOR, file, comment, cache tests: `backend/tests/test_workspaces_tasks.py`
+- Rate limit test: `backend/tests/test_auth.py`
+- Workspace, task, IDOR, file, comment, activity, demo cleanup, cache tests: `backend/tests/test_workspaces_tasks.py`
 
 Frontend:
 
 - Full-stack dashboard: `frontend/src/main.jsx`
 - Styling: `frontend/src/styles.css`
 
-## 24. Key Interview Talking Points
+## 25. Key Interview Talking Points
 
 - I separated route handlers, business logic, and database queries so the code is easier to test and extend.
 - I used bcrypt for passwords because passwords need slow one-way hashing.
@@ -1169,4 +1400,7 @@ Frontend:
 - I return `404` for resources outside a user's workspace to avoid IDOR information leaks.
 - I validate task assignees against workspace membership.
 - I added a full-stack React dashboard to demonstrate the API through real product workflows.
+- I added bonus rate limiting on auth endpoints to reduce brute-force risk.
+- I added task activity history so status changes become auditable.
+- I return comment author and timestamp so collaboration records have context.
 - I kept the frontend simple because the backend is the evaluation focus.

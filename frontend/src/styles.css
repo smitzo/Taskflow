@@ -284,7 +284,8 @@ label {
 .member-list,
 .task-list,
 .comment-list,
-.attachment-list {
+.attachment-list,
+.activity-list {
   display: grid;
   gap: 9px;
 }
@@ -411,6 +412,33 @@ label {
 }
 
 .comment {
+  background: #f7faf8;
+  border: 1px solid #e4ece9;
+  border-radius: 7px;
+  padding: 10px;
+}
+
+.comment-meta,
+.activity-item {
+  align-items: center;
+  color: #5c6d68;
+  display: flex;
+  font-size: 0.82rem;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.comment p {
+  margin-top: 6px;
+}
+
+.activity-section {
+  border-top: 1px solid #edf1ef;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.activity-item {
   background: #f7faf8;
   border: 1px solid #e4ece9;
   border-radius: 7px;

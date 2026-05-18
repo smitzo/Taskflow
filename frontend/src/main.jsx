@@ -23,7 +23,13 @@ import "./styles.css";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
 const emptyWorkspaceForm = { name: "", description: "" };
-const emptyTaskForm = { title: "", description: "", assignee_id: "", priority: "medium", deadline: "" };
+const createEmptyTaskForm = () => ({
+  title: "",
+  description: "",
+  assignee_id: "",
+  priority: "medium",
+  deadline: toDateTimeLocal(addHours(new Date(), 24)),
+});
 const emptyFilters = { status: "", priority: "", assignee_id: "", page: 1, size: 10 };
 const statusOrder = ["todo", "in_progress", "review", "done"];
 
@@ -48,10 +54,11 @@ function App() {
   const [comments, setComments] = useState({ items: [], page: 1, size: 10, total: 0 });
   const [workspaceForm, setWorkspaceForm] = useState(emptyWorkspaceForm);
   const [inviteEmail, setInviteEmail] = useState("");
-  const [taskForm, setTaskForm] = useState(emptyTaskForm);
+  const [taskForm, setTaskForm] = useState(createEmptyTaskForm);
   const [filters, setFilters] = useState(emptyFilters);
   const [commentBody, setCommentBody] = useState("");
   const [uploadFile, setUploadFile] = useState(null);
+  const [activity, setActivity] = useState({ items: [], page: 1, size: 10, total: 0 });
   const [message, setMessage] = useState("Ready.");
   const [loading, setLoading] = useState(false);
 
@@ -186,6 +193,7 @@ function App() {
       setSummary(taskSummary);
       setSelectedTask(null);
       setComments({ items: [], page: 1, size: 10, total: 0 });
+      setActivity({ items: [], page: 1, size: 10, total: 0 });
       setMessage("Workspace loaded.");
     } catch (error) {
       setMessage(error.message);
@@ -263,6 +271,30 @@ function App() {
     }
   }
 
+  async function removeDemoData() {
+    setLoading(true);
+    try {
+      const result = await request("/demo/seed", { method: "DELETE" });
+      const nextWorkspaces = await request("/workspaces");
+      setWorkspaces(nextWorkspaces);
+      setSelectedWorkspaceId(nextWorkspaces[0]?.id ?? "");
+      setWorkspaceDetail(null);
+      setTasks({ items: [], page: 1, size: 10, total: 0 });
+      setSummary(null);
+      setSelectedTask(null);
+      setComments({ items: [], page: 1, size: 10, total: 0 });
+      setActivity({ items: [], page: 1, size: 10, total: 0 });
+      if (nextWorkspaces[0]) {
+        await loadWorkspaceBundle(nextWorkspaces[0].id);
+      }
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function removeMember(userId) {
     if (!selectedWorkspaceId) return;
     setLoading(true);
@@ -291,7 +323,7 @@ function App() {
           deadline: taskForm.deadline ? new Date(taskForm.deadline).toISOString() : null,
         }),
       });
-      setTaskForm(emptyTaskForm);
+      setTaskForm(createEmptyTaskForm());
       await loadWorkspaceBundle(selectedWorkspaceId);
       setMessage("Task created.");
     } catch (error) {
@@ -321,9 +353,13 @@ function App() {
     setLoading(true);
     try {
       const detail = await request(`/tasks/${taskId}`);
-      const commentPage = await request(`/tasks/${taskId}/comments?page=1&size=10`);
+      const [commentPage, activityPage] = await Promise.all([
+        request(`/tasks/${taskId}/comments?page=1&size=10`),
+        request(`/tasks/${taskId}/activity?page=1&size=10`),
+      ]);
       setSelectedTask(detail);
       setComments(commentPage);
+      setActivity(activityPage);
       setMessage("Task loaded.");
     } catch (error) {
       setMessage(error.message);
@@ -343,7 +379,9 @@ function App() {
         body: JSON.stringify({ status: nextStatus }),
       });
       await loadWorkspaceBundle(selectedWorkspaceId);
-      setSelectedTask(updated.id === selectedTask?.id ? await request(`/tasks/${updated.id}`) : selectedTask);
+      if (updated.id === selectedTask?.id) {
+        await loadTask(updated.id);
+      }
       setMessage("Task status updated.");
     } catch (error) {
       setMessage(error.message);
@@ -506,6 +544,9 @@ function App() {
           </button>
           <button onClick={populateDemoData} disabled={loading} type="button">
             <Plus size={16} /> Populate demo data
+          </button>
+          <button onClick={removeDemoData} disabled={loading} type="button">
+            <Trash2 size={16} /> Remove demo data
           </button>
         </div>
 
@@ -794,7 +835,11 @@ function App() {
                     <div className="comment-list">
                       {comments.items.map((comment) => (
                         <div key={comment.id} className="comment">
-                          {comment.body}
+                          <div className="comment-meta">
+                            <strong>{comment.author?.full_name ?? comment.author_id}</strong>
+                            <span>{formatDateTime(comment.created_at)}</span>
+                          </div>
+                          <p>{comment.body}</p>
                         </div>
                       ))}
                     </div>
@@ -817,6 +862,26 @@ function App() {
                     </div>
                   </div>
                 </div>
+
+                <div className="activity-section">
+                  <h4>Activity</h4>
+                  <div className="activity-list">
+                    {activity.items.length === 0 ? (
+                      <p className="muted">No status changes yet.</p>
+                    ) : (
+                      activity.items.map((item) => (
+                        <div key={item.id} className="activity-item">
+                          <span>
+                            <strong>{item.actor?.full_name ?? item.actor_id}</strong> moved status from{" "}
+                            <strong>{item.from_status ? formatLabel(item.from_status) : "none"}</strong> to{" "}
+                            <strong>{formatLabel(item.to_status)}</strong>
+                          </span>
+                          <time>{formatDateTime(item.created_at)}</time>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </section>
             )}
           </>
@@ -837,6 +902,22 @@ function Metric({ label, value }) {
 
 function formatLabel(value) {
   return value.replaceAll("_", " ");
+}
+
+function addHours(date, hours) {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function toDateTimeLocal(date) {
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000);
+  return offsetDate.toISOString().slice(0, 16);
+}
+
+function formatDateTime(value) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function formatApiError(detail) {
